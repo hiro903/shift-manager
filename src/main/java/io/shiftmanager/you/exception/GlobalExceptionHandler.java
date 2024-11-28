@@ -1,23 +1,51 @@
 package io.shiftmanager.you.exception;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
 import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import javax.naming.AuthenticationException;
 import java.nio.file.AccessDeniedException;
 import java.time.LocalDateTime;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
 @ControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            @NonNull MethodArgumentNotValidException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request) {
+
+        Map<String, String> errors = new HashMap<>();
+        ex.getBindingResult().getAllErrors().forEach((error) -> {
+            String fieldName = ((FieldError) error).getField();
+            String errorMessage = error.getDefaultMessage();
+            errors.put(fieldName, errorMessage);
+        });
+
+        ErrorDetails errorDetails = ErrorDetails.builder()
+                .timestamp(LocalDateTime.now())
+                .message("入力値が不正です")
+                .details(errors.toString())
+                .status(status.value())
+                .error("Validation Failed")
+                .path(request.getDescription(false))
+                .build();
+
+        return new ResponseEntity<>(errorDetails, status);
+    }
 
     // ユーザーが見つからない場合
     @ExceptionHandler(UserNotFoundException.class)
@@ -37,6 +65,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(errorDetails, HttpStatus.NOT_FOUND);
     }
 
+
     // ユーザーが既に存在する場合
     @ExceptionHandler(UserAlreadyExistsException.class)
     public ResponseEntity<ErrorDetails> handleUserAlreadyExistsException(
@@ -55,29 +84,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(errorDetails, HttpStatus.CONFLICT);
     }
 
-    // バリデーションエラー
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Object> handleValidationExceptions(
-            MethodArgumentNotValidException ex) {
-
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
-
-        ErrorDetails errorDetails = ErrorDetails.builder()
-                .timestamp(LocalDateTime.now())
-                .message("入力値が不正です")
-                .details(errors.toString())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Validation Failed")
-                .path(null)
-                .build();
-
-        return new ResponseEntity<>(errorDetails, HttpStatus.BAD_REQUEST);
-    }
 
     // 認証エラー
     @ExceptionHandler(AuthenticationException.class)

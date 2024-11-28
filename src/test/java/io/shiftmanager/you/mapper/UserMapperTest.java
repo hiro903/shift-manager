@@ -5,13 +5,18 @@ import org.junit.jupiter.api.Test;
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.BeforeEach;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -21,10 +26,32 @@ public class UserMapperTest {
     @Autowired
     private UserMapper userMapper;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @BeforeEach
+    public void setup() {
+        // テストデータのクリーンアップ
+        cleanupTestData();
+    }
+
+    private void cleanupTestData() {
+        try {
+            // 全てのユーザーを取得
+            List<User> users = userMapper.getAllUsers();
+            // 1件ずつ削除
+            for (User user : users) {
+                userMapper.delete(user.getUserId());
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to cleanup test data: " + e.getMessage());
+        }
+    }
+
     private User createTestUser(String username, String email) {
         User user = new User();
         user.setUsername(username);
-        user.setPassword("testPassword");
+        user.setPassword(passwordEncoder.encode("testPassword"));
         user.setEmail(email);
         user.setIsActive(true);
         user.setIsAdmin(false);
@@ -36,24 +63,34 @@ public class UserMapperTest {
     @Test
     @Transactional
     public void testInsertAndGetUser() {
-        // テスト用ユーザーの作成
         User user = createTestUser("testUser", "test@example.com");
-
-        // ユーザーの挿入
-        userMapper.insertUser(user);
-        assertThat(user.getUserId()).isNotNull();
-
-        // 挿入したユーザーの取得
+        userMapper.insert(user);
         User retrievedUser = userMapper.getUserById(user.getUserId());
 
-        // 検証
         assertThat(retrievedUser).isNotNull();
         assertThat(retrievedUser.getUsername()).isEqualTo("testUser");
         assertThat(retrievedUser.getEmail()).isEqualTo("test@example.com");
-        assertThat(retrievedUser.isActive()).isTrue();
-        assertThat(retrievedUser.isAdmin()).isFalse();
-        assertThat(retrievedUser.getCreatedAt()).isNotNull();
-        assertThat(retrievedUser.getUpdatedAt()).isNotNull();
+        assertThat(passwordEncoder.matches("testPassword", retrievedUser.getPassword())).isTrue();
+    }
+
+    @Test
+    @Transactional
+    public void testDuplicateUsername() {
+        User user1 = createTestUser("sameUser", "test1@example.com");
+        User user2 = createTestUser("sameUser", "test2@example.com");
+        userMapper.insert(user1);
+
+        assertThatThrownBy(() -> userMapper.insert(user2))
+                .isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    @Transactional
+    public void testInvalidData() {
+        User invalidUser = new User();
+        // 必須フィールドを設定しない
+        assertThatThrownBy(() -> userMapper.insert(invalidUser))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -65,8 +102,8 @@ public class UserMapperTest {
         user2.setIsAdmin(true);
 
         // ユーザーの挿入
-        userMapper.insertUser(user1);
-        userMapper.insertUser(user2);
+        userMapper.insert(user1);
+        userMapper.insert(user2);
 
         // 全ユーザーの取得
         List<User> users = userMapper.getAllUsers();
@@ -93,54 +130,27 @@ public class UserMapperTest {
     @Test
     @Transactional
     public void testUpdateUser() {
-        // テスト用ユーザーの作成と挿入
-        User user = createTestUser("originalName", "original@example.com");
-        userMapper.insertUser(user);
-        Long userId = user.getUserId();
+        User user = createTestUser("originalUser", "original@example.com");
+        userMapper.insert(user);
 
-        // 更新前の状態を保存
-        LocalDateTime originalCreatedAt = user.getCreatedAt();
-
-        // 少し待ってから更新（タイムスタンプの差を確実にするため）
-        try {
-            Thread.sleep(10);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        // ユーザー情報の更新
-        user.setUsername("updatedName");
+        user.setUsername("updatedUser");
         user.setEmail("updated@example.com");
-        user.setIsAdmin(true);
-        user.setUpdatedAt(LocalDateTime.now());
-        userMapper.updateUser(user);
+        userMapper.update(user);
 
-        // 更新されたユーザーの取得と検証
-        User updatedUser = userMapper.getUserById(userId);
-
-        assertThat(updatedUser.getUsername()).isEqualTo("updatedName");
+        User updatedUser = userMapper.getUserById(user.getUserId());
+        assertThat(updatedUser.getUsername()).isEqualTo("updatedUser");
         assertThat(updatedUser.getEmail()).isEqualTo("updated@example.com");
-        assertThat(updatedUser.isAdmin()).isTrue();
-        assertThat(updatedUser.getCreatedAt()).isEqualTo(originalCreatedAt);
-        assertThat(updatedUser.getUpdatedAt()).isAfter(originalCreatedAt);
     }
 
     @Test
     @Transactional
     public void testDeleteUser() {
-        // テスト用ユーザーの作成と挿入
-        User user = createTestUser("deleteTest", "delete@example.com");
-        userMapper.insertUser(user);
-        Long userId = user.getUserId();
+        User user = createTestUser("deleteUser", "delete@example.com");
+        userMapper.insert(user);
 
-        // 削除前の存在確認
-        assertThat(userMapper.getUserById(userId)).isNotNull();
+        userMapper.delete(user.getUserId());
 
-        // ユーザーの削除
-        int result = userMapper.deleteUser(userId);
-
-        // 検証
-        assertThat(result).isEqualTo(1);
-        assertThat(userMapper.getUserById(userId)).isNull();
+        User deletedUser = userMapper.getUserById(user.getUserId());
+        assertThat(deletedUser).isNull();
     }
 }

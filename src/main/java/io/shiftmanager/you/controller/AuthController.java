@@ -1,6 +1,5 @@
 package io.shiftmanager.you.controller;
 
-import io.shiftmanager.you.model.User;
 import io.shiftmanager.you.service.UserService;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
