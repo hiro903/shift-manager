@@ -24,9 +24,8 @@ public interface UserMapper {
             "username = #{username}, " +
             "email = #{email}, " +
             "is_active = #{isActive}, " +
-            "is_admin = #{isAdmin}" +
-            // パスワードが設定されている場合のみ更新
-            "${password != null ? ', password = #{password}' : ''} " +
+            "is_admin = #{isAdmin}, " +
+            "password = CASE WHEN #{password} IS NOT NULL THEN #{password} ELSE password END " +
             "WHERE user_id = #{userId}")
     void update(User user);
 

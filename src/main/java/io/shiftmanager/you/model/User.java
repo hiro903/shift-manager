@@ -54,3 +54,4 @@ public class User {
         this.isAdmin = isAdmin;
     }
 }
+
